@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lojyyk — Simulateur v4</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+  body {
+    background: #d5d9e2;
+    background-image: radial-gradient(circle, #adb2bc 1px, transparent 1px);
+    background-size: 22px 22px;
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+    overflow: hidden; height: 100vh;
+    display: flex; flex-direction: column; color: #111;
+  }
+  #topbar {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding: 7px 14px; background: #fff;
+    border-bottom: 1px solid #ddd;
+    box-shadow: 0 1px 4px rgba(0,0,0,.08); flex-shrink: 0;
+  }
+  .logo { font-size: 15px; font-weight: 700; letter-spacing: 3px; font-family: 'Courier New', monospace; }
+  .sep  { width: 1px; height: 20px; background: #ddd; }
+  .pb {
+    padding: 4px 10px; border-radius: 5px; border: 1px solid #ccc;
+    background: #fff; color: #222; font-size: 11px; font-weight: 600;
+    cursor: pointer; display: flex; align-items: center; gap: 5px;
+  }
+  .pb:hover { background: #f0f4ff; border-color: #1a56db; color: #1a56db; }
+  .pb .dot { width: 8px; height: 8px; border-radius: 50%; }
+  #wbtn { padding: 4px 10px; border-radius: 5px; border: 1px solid #ccc; background: #fff; color: #444; font-size: 11px; font-weight: 600; cursor: pointer; }
+  #wbtn.on { background: #e8f5e9; border-color: #388e3c; color: #388e3c; }
+  #dbtn { padding: 4px 10px; border-radius: 5px; border: 1px solid #e88; background: #fff5f5; color: #c00; font-size: 11px; cursor: pointer; }
+  #dbtn:hover { background: #ffe0e0; }
+  .hint { margin-left: auto; font-size: 10px; color: #999; }
+
+  #cw { flex: 1; position: relative; overflow: hidden; }
+  #sl { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
+  #bl { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
+
+  /* Block = white rounded rect, contains an SVG that IS the block face */
+  .blk {
+    position: absolute; pointer-events: all;
+    cursor: grab;
+    filter: drop-shadow(0 2px 6px rgba(0,0,0,.18));
+    transition: filter .15s;
+  }
+  .blk:active { cursor: grabbing; }
+  .blk.sel { filter: drop-shadow(0 0 3px #1a56dbaa) drop-shadow(0 0 1px #1a56db) drop-shadow(0 2px 6px rgba(0,0,0,.18)); }
+
+  /* USB-C hit target (invisible, over the SVG port rect) */
+  .upc {
+    position: absolute; cursor: crosshair;
+    border-radius: 2px; z-index: 10;
+  }
+
+  /* Switch hit area */
+  .swh { position: absolute; cursor: pointer; }
+
+  .wp { pointer-events: none; }
+  .wp.wsel { stroke: #1a56db !important; stroke-width: 4px !important; stroke-dasharray: none !important; filter: drop-shadow(0 0 4px #1a56db88) !important; }
+
+  #mi {
+    position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%);
+    background: #fff; border: 1.5px solid #1a56db;
+    padding: 4px 14px; border-radius: 16px; font-size: 10px; font-weight: 600; color: #1a56db;
+    pointer-events: none; opacity: 0; transition: opacity .2s; z-index: 100;
+    box-shadow: 0 2px 8px rgba(26,86,219,.15);
+  }
+  #mi.vis { opacity: 1; }
+  .cm { position: fixed; background: #fff; border: 1px solid #ddd; border-radius: 7px; padding: 3px 0; z-index: 200; min-width: 140px; box-shadow: 0 4px 16px rgba(0,0,0,.12); }
+  .cmi { padding: 7px 14px; font-size: 11px; cursor: pointer; color: #333; }
+  .cmi:hover { background: #fef2f2; color: #c00; }
+</style>
+</head>
+<body>
+<div id="topbar">
+  <span class="logo">LOJYYK</span>
+  <div class="sep"></div>
+  <button class="pb" onclick="spawn('input')"><span class="dot" style="background:#1565c0"></span>INPUT</button>
+  <button class="pb" onclick="spawn('and')"><span class="dot" style="background:#6a1b9a"></span>AND</button>
+  <button class="pb" onclick="spawn('or')"><span class="dot" style="background:#6a1b9a"></span>OR</button>
+  <button class="pb" onclick="spawn('not')"><span class="dot" style="background:#6a1b9a"></span>NOT</button>
+  <button class="pb" onclick="spawn('split')"><span class="dot" style="background:#2e7d32"></span>SPLIT</button>
+  <button class="pb" onclick="spawn('output')"><span class="dot" style="background:#b71c1c"></span>OUTPUT</button>
+  <div class="sep"></div>
+  <button id="wbtn" onclick="toggleWM()">🔌 CÂBLE</button>
+  <button id="dbtn" onclick="delSel()">✕ SUPPR</button>
+  <span class="hint">Drag · Câble: port→port · Clic pour sélectionner · Suppr/Clic droit pour effacer</span>
+</div>
+<div id="cw">
+  <svg id="sl" xmlns="http://www.w3.org/2000/svg" width="100%" height="100%">
+    <defs>
+      <marker id="an" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#aaa"/></marker>
+      <marker id="a0" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#e53935"/></marker>
+      <marker id="a1" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#43a047"/></marker>
+      <marker id="ad" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#1a56db"/></marker>
+    </defs>
+  </svg>
+  <div id="bl"></div>
+</div>
+<div id="mi">MODE CÂBLAGE — port de sortie → port d'entrée</div>
+
+<script>
+// ─── SVG block rendering ───────────────────────────────────────────────────
+// Scale factor: 1 TikZ unit = S px
+const S = 52;
+
+// Colors
+const LED_OFF = '#d0d0d0';
+const LED_RED_ON = '#e53935';
+const LED_GRN_ON = '#43a047';
+const STROKE = '#222';
+const SW = 1.5; // stroke-width
+
+// LED positions from TikZ (relative to port centre):
+// flechelojyykin  side=l : red at (cx-0.75, cy+0.3), green at (cx-0.75, cy-0.3)
+//   → in SVG coords (y-flipped): red is ABOVE green ✓
+// flechelojyykout side=r : red at (cx+0.75, cy-0.3), green at (cx+0.75, cy+0.3)
+//   → in SVG coords (y-flipped): red is BELOW green
+//   BUT in the PDF images the output side also shows red above green visually.
+//   Re-reading: TikZ y goes up, SVG y goes down.
+//   TikZ: red at cy+0.3 means red is HIGHER (more to top of screen) → in SVG that's SMALLER y → red is above.
+//   For 'r' out: red at cy-0.3 → LOWER in TikZ → LARGER y in SVG → red is below.
+//   That matches "en allant de l'extérieur vers l'intérieur, rouge à gauche":
+//     left port (in): exterior is left, arrow goes right. Standing at exterior looking inward:
+//       red is at cy+0.3 (above), green at cy-0.3 (below). Going along arrow: red on left = red above. ✓
+//     right port (out): exterior is right, arrow goes right (outward). Standing at exterior (right side):
+//       exterior=right. Going from interior toward exterior (right): red at cy-0.3 (below in SVG),
+//       green at cy+0.3 (above in SVG). From exterior looking at the port: red on left = red below. ✓
+
+function mkSVG(type, bid) {
+  // Returns {svgEl, portCenters:{portName:{x,y}}, switchRect:{x,y,w,h}}
+  const isUnary  = ['power','input','not','output'].includes(type);
+  const isBinary = ['and','or','split'].includes(type);
+
+  // Block dimensions in px
+  // baseblocunary:  (cx-s, cy-s) to (cx+s, cy+s), s=1 → 2s × 2s square, centre at (s,s)
+  // baseblocbinary: (cx-s, cy-2s) to (cx+s, cy+2s), s=1 → 2s × 4s, centre at (s, 2s)
+  const half = S; // 1 unit
+  let BW, BH, BCX, BCY; // block width/height, centre in SVG coords
+  if (isUnary)  { BW = 2*half; BH = 2*half; BCX = half; BCY = half; }
+  else          { BW = 2*half; BH = 4*half; BCX = half; BCY = 2*half; }
+
+  // Extra px around block for LED/arrow overflow
+  const PAD = Math.round(0.9*S);
+  const W = BW + 2*PAD;
+  const H = BH + 2*PAD;
+
+  // Block rect in SVG (offset by PAD)
+  const bx = PAD, by = PAD;
+
+  // Helper: TikZ (dx,dy) relative to block centre → SVG absolute (x,y)
+  // TikZ y increases up, SVG y increases down
+  function t(dx, dy) { return { x: BCX + dx*S + PAD, y: BCY - dy*S + PAD }; }
+
+  // ── SVG element ──
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns,'svg');
+  svg.setAttribute('width', W);
+  svg.setAttribute('height', H);
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+
+  function el(tag, attrs, parent) {
+    const e = document.createElementNS(ns, tag);
+    for (const [k,v] of Object.entries(attrs)) e.setAttribute(k,v);
+    (parent||svg).appendChild(e); return e;
+  }
+
+  // Block rectangle
+  el('rect', { x:bx, y:by, width:BW, height:BH, rx:8, ry:8,
+    fill:'white', stroke:STROKE, 'stroke-width':SW });
+
+  // ── Label ──
+  // TikZ: node at (cx, cy+0.7) for unary, (cx, cy+1.7) for binary
+  const lp = isUnary ? t(0, 0.7) : t(0, 1.7);
+  el('text', { x:lp.x, y:lp.y, 'text-anchor':'middle', 'dominant-baseline':'middle',
+    'font-family':'Helvetica Neue,Arial,sans-serif', 'font-size': Math.round(0.28*S),
+    'font-weight':'700', fill:STROKE,
+    'letter-spacing':'1' }, svg).textContent = type.toUpperCase();
+
+  // ── Arrow helper ──
+  // TikZ arrow: Stealth tip length=5pt width=8pt → roughly 0.12u long
+  // flechelojyykin  l: from (cx-1+0.1, cy) → (cx-1+0.5, cy)  [pointing right]
+  // flechelojyykout r: from (cx+1-0.5, cy) → (cx+1-0.1, cy)  [pointing right]
+  function arrow(x1,y1,x2,y2) {
+    const aw = 0.14*S, ah = 0.22*S;
+    // Draw line + arrowhead
+    el('line', { x1, y1, x2, y2, stroke:STROKE, 'stroke-width':SW, 'stroke-linecap':'round' });
+    // Arrowhead triangle pointing right (x2>x1) or left
+    const dir = x2>x1 ? 1 : -1;
+    const pts = `${x2},${y2} ${x2-dir*aw},${y2-ah/2} ${x2-dir*aw},${y2+ah/2}`;
+    el('polygon', { points:pts, fill:STROKE });
+  }
+
+  // ── LED helper ──
+  // Returns {cx,cy} in SVG for placement
+  function led(id_r, id_g, tikzCX, tikzCY, side) {
+    // side 'l' (input left): red at (cx-0.75, cy+0.3), green at (cx-0.75, cy-0.3)
+    // side 'r' (output right): red at (cx+0.75, cy-0.3), green at (cx+0.75, cy+0.3)
+    let rp, gp;
+    if (side==='l') { rp=t(-0.75, 0.3); gp=t(-0.75, -0.3); }
+    else            { rp=t(+0.75, -0.3); gp=t(+0.75, +0.3); }
+    // offset by port centre offset
+    const off = t(tikzCX, tikzCY);
+    const dx = off.x - t(0,0).x, dy = off.y - t(0,0).y;
+    const r = Math.round(0.11*S);
+    const rc = el('circle', { cx:rp.x+dx, cy:rp.y+dy, r, fill:LED_OFF, stroke:'#aaa', 'stroke-width':1 });
+    const gc = el('circle', { cx:gp.x+dx, cy:gp.y+dy, r, fill:LED_OFF, stroke:'#aaa', 'stroke-width':1 });
+    rc.id = id_r; gc.id = id_g;
+    return { rCenter:{x:rp.x+dx, y:rp.y+dy}, gCenter:{x:gp.x+dx, y:gp.y+dy} };
+  }
+
+  // ── USB-C port rect helper ──
+  // Returns centre {x,y} in SVG for wire attachment
+  // TikZ port is at block edge: left edge x=cx-1, right edge x=cx+1
+  // Port rect drawn like TikZ block rects (USB-C shape)
+  function usbPort(id, tikzPortCX, tikzPortCY, side) {
+    const pw = Math.round(0.15*S), ph = Math.round(0.42*S), pr = 3;
+    const pc = t(tikzPortCX, tikzPortCY);
+    // offset along edge
+    const edgeX = side==='l' ? t(-1, 0).x : t(1, 0).x;
+    const cx = edgeX, cy = pc.y;
+    const rx = cx - pw/2, ry = cy - ph/2;
+    el('rect', { id, x:rx, y:ry, width:pw, height:ph, rx:pr, ry:pr,
+      fill:'#f0f0f0', stroke:'#888', 'stroke-width':1.5 });
+    // inner pin
+    el('rect', { x:cx-Math.round(0.05*S), y:cy-Math.round(0.1*S),
+      width:Math.round(0.1*S), height:Math.round(0.2*S), rx:2, fill:'#bbb' });
+    return { x:cx, y:cy };
+  }
+
+  // ── Per-type drawing ──────────────────────────────────────────────────────
+  const portCenters = {};
+  let switchRect = null;
+
+  if (type === 'power') {
+    // flechelojyykout r at (cx+0, cy+0) = block centre
+    led(`lr-${bid}-Q`, `lg-${bid}-Q`, 0, 0, 'r');
+    const ap = t(0,0);
+    const ax1 = t(1-0.5, 0).x, ax2 = t(1-0.1, 0).x;
+    arrow(ax1, ap.y, ax2, ap.y);
+    portCenters['Q'] = usbPort(`up-${bid}-Q`, 0, 0, 'r');
+    // USB-C charge port: TikZ at (#1-0.6, #2-0.2..+0.2) = small rect left of switch
+    const cp = t(-0.55, 0);
+    el('rect', { x:cp.x-Math.round(0.06*S), y:cp.y-Math.round(0.2*S),
+      width:Math.round(0.12*S), height:Math.round(0.4*S), rx:3,
+      fill:'#f5f5f5', stroke:'#888', 'stroke-width':1.2 });
+    // Switch: TikZ at (#1-0.1..+0.1, #2-0.25..+0.25)
+    const sp = t(0, 0);
+    const sw_x = sp.x - Math.round(0.1*S), sw_y = sp.y - Math.round(0.25*S);
+    const sw_w = Math.round(0.2*S), sw_h = Math.round(0.5*S);
+    el('rect', { id:`sw-bg-${bid}`, x:sw_x, y:sw_y, width:sw_w, height:sw_h, rx:3,
+      fill:'white', stroke:STROKE, 'stroke-width':1.2 });
+    el('rect', { id:`sw-thumb-${bid}`, x:sw_x+Math.round(0.015*S), y:sw_y+Math.round(0.04*S),
+      width:sw_w-Math.round(0.03*S), height:sw_h*0.45, rx:2, fill:'#333' });
+    switchRect = { x:sw_x, y:sw_y, w:sw_w, h:sw_h };
+  }
+
+  if (type === 'input') {
+    led(`lr-${bid}-Q`, `lg-${bid}-Q`, 0, 0, 'r');
+    const ap = t(0,0);
+    arrow(t(1-0.5,0).x, ap.y, t(1-0.1,0).x, ap.y);
+    portCenters['Q'] = usbPort(`up-${bid}-Q`, 0, 0, 'r');
+    // Switch same as POWER minus USB-C charge port
+    const sp = t(0,0);
+    const sw_x = sp.x-Math.round(0.1*S), sw_y = sp.y-Math.round(0.25*S);
+    const sw_w = Math.round(0.2*S), sw_h = Math.round(0.5*S);
+    el('rect', { id:`sw-bg-${bid}`, x:sw_x, y:sw_y, width:sw_w, height:sw_h, rx:3,
+      fill:'white', stroke:STROKE, 'stroke-width':1.2 });
+    el('rect', { id:`sw-thumb-${bid}`, x:sw_x+Math.round(0.015*S), y:sw_y+Math.round(0.04*S),
+      width:sw_w-Math.round(0.03*S), height:sw_h*0.45, rx:2, fill:'#333' });
+    switchRect = { x:sw_x, y:sw_y, w:sw_w, h:sw_h };
+  }
+
+  if (type === 'output') {
+    led(`lr-${bid}-A`, `lg-${bid}-A`, 0, 0, 'l');
+    const ap = t(0,0);
+    arrow(t(-1+0.1,0).x, ap.y, t(-1+0.5,0).x, ap.y);
+    portCenters['A'] = usbPort(`up-${bid}-A`, 0, 0, 'l');
+  }
+
+  if (type === 'not') {
+    // in left, out right
+    led(`lr-${bid}-A`, `lg-${bid}-A`, 0, 0, 'l');
+    led(`lr-${bid}-Q`, `lg-${bid}-Q`, 0, 0, 'r');
+    arrow(t(-1+0.1,0).x, t(0,0).y, t(-1+0.5,0).x, t(0,0).y);
+    arrow(t(1-0.5,0).x, t(0,0).y, t(1-0.1,0).x, t(0,0).y);
+    portCenters['A'] = usbPort(`up-${bid}-A`, 0, 0, 'l');
+    portCenters['Q'] = usbPort(`up-${bid}-Q`, 0, 0, 'r');
+    // NOT symbol: triangle + bubble
+    // symLojyykNOT at (cx, cy): triangle (cx-0.35,cy±0.28)→(cx+0.28,cy), bubble at cx+0.38 r=0.07
+    // input stub: (cx-0.55,cy)→(cx-0.35,cy), output stub: (cx+0.45,cy)→(cx+0.62,cy)
+    const o = t(0,0);
+    const pts = [t(-0.35,-0.28),t(-0.35,0.28),t(0.28,0)].map(p=>`${p.x},${p.y}`).join(' ');
+    el('polygon', { points:pts, fill:'none', stroke:STROKE, 'stroke-width':SW, 'stroke-linejoin':'round' });
+    el('circle', { cx:t(0.38,0).x, cy:t(0.38,0).y, r:Math.round(0.07*S),
+      fill:'none', stroke:STROKE, 'stroke-width':SW });
+    el('line', { x1:t(-0.55,0).x, y1:o.y, x2:t(-0.35,0).x, y2:o.y, stroke:STROKE, 'stroke-width':SW });
+    el('line', { x1:t(0.45,0).x, y1:o.y, x2:t(0.62,0).x, y2:o.y, stroke:STROKE, 'stroke-width':SW });
+  }
+
+  if (type === 'and') {
+    // binary: centre at (0,0), inputs at (0,+1) and (0,-1), output at (0,0)
+    led(`lr-${bid}-A`, `lg-${bid}-A`, 0, 1, 'l');
+    led(`lr-${bid}-B`, `lg-${bid}-B`, 0,-1, 'l');
+    led(`lr-${bid}-Q`, `lg-${bid}-Q`, 0, 0, 'r');
+    // arrows
+    const cy1=t(0,1).y, cy2=t(0,-1).y, cyo=t(0,0).y;
+    arrow(t(-1+0.1,0).x, cy1, t(-1+0.5,0).x, cy1);
+    arrow(t(-1+0.1,0).x, cy2, t(-1+0.5,0).x, cy2);
+    arrow(t(1-0.5,0).x, cyo, t(1-0.1,0).x, cyo);
+    portCenters['A'] = usbPort(`up-${bid}-A`, 0, 1, 'l');
+    portCenters['B'] = usbPort(`up-${bid}-B`, 0,-1, 'l');
+    portCenters['Q'] = usbPort(`up-${bid}-Q`, 0, 0, 'r');
+    // AND symbol at (cx+0.05, cy) from TikZ
+    // D-shape: left vertical at x-0.35, flat top/bottom at y±0.28, arc from (x+0.05,y±0.28) r=0.28
+    // Input stubs: (cx-0.55,cy±0.15)→(cx-0.35,cy±0.15)
+    // Vertical bus: (cx-0.47,cy+1)→(cx-0.47,cy-1), stub lines to ports
+    // Port-to-bus: (cx-0.9,cy±1)→(cx-0.44,cy±1)
+    // Output stub: (cx+0.33,cy)→(cx+0.53,cy)
+    const ox = 0.20; // shifted right for visual alignment
+    const A = (dx,dy)=>t(dx+ox,dy);
+    const arcR = Math.round(0.28*S);
+    // Exact TikZ path: left vertical + bottom horizontal + right arc + top horizontal (closed)
+    el('path', {
+      d:`M${A(-0.35,0.28).x},${A(-0.35,0.28).y} L${A(-0.35,-0.28).x},${A(-0.35,-0.28).y} L${A(0.05,-0.28).x},${A(0.05,-0.28).y} A${arcR},${arcR} 0 0 0 ${A(0.05,0.28).x},${A(0.05,0.28).y} Z`,
+      fill:'none', stroke:STROKE, 'stroke-width':SW, 'stroke-linejoin':'round'
+    });
+    // Internal stubs: from bus (fixed at -0.47) to body left edge (shifted at ox-0.35)
+    el('line',{x1:t(-0.47,0.15).x,y1:A(-0.47,0.15).y,x2:A(-0.35,0.15).x,y2:A(-0.35,0.15).y,stroke:STROKE,'stroke-width':SW});
+    el('line',{x1:t(-0.47,-0.15).x,y1:A(-0.47,-0.15).y,x2:A(-0.35,-0.15).x,y2:A(-0.35,-0.15).y,stroke:STROKE,'stroke-width':SW});
+    el('line',{x1:A(0.33,0).x,y1:A(0.33,0).y,x2:A(0.53,0).x,y2:A(0.53,0).y,stroke:STROKE,'stroke-width':SW});
+    // Vertical bus and port stubs (from lojyykblocAND)
+    const busX = t(-0.47,0).x;
+    el('line',{x1:t(-0.9,1).x,y1:cy1,x2:t(-0.455,1).x,y2:cy1,stroke:STROKE,'stroke-width':SW});
+    el('line',{x1:t(-0.9,-1).x,y1:cy2,x2:t(-0.455,-1).x,y2:cy2,stroke:STROKE,'stroke-width':SW});
+    el('line',{x1:busX,y1:cy1,x2:busX,y2:cy2,stroke:STROKE,'stroke-width':SW});
+  }
+
+  if (type === 'or') {
+    led(`lr-${bid}-A`, `lg-${bid}-A`, 0, 1, 'l');
+    led(`lr-${bid}-B`, `lg-${bid}-B`, 0,-1, 'l');
+    led(`lr-${bid}-Q`, `lg-${bid}-Q`, 0, 0, 'r');
+    const cy1=t(0,1).y, cy2=t(0,-1).y, cyo=t(0,0).y;
+    arrow(t(-1+0.1,0).x, cy1, t(-1+0.5,0).x, cy1);
+    arrow(t(-1+0.1,0).x, cy2, t(-1+0.5,0).x, cy2);
+    arrow(t(1-0.5,0).x, cyo, t(1-0.1,0).x, cyo);
+    portCenters['A'] = usbPort(`up-${bid}-A`, 0, 1, 'l');
+    portCenters['B'] = usbPort(`up-${bid}-B`, 0,-1, 'l');
+    portCenters['Q'] = usbPort(`up-${bid}-Q`, 0, 0, 'r');
+    // OR symbol shifted right by 0.15 for visual alignment
+    const orOx = 0.22;
+    const O = (dx,dy)=>t(dx+orOx,dy);
+    const arcR2 = Math.round(0.28*S);
+    const backPeakX = O(-0.35+0.323*0.5, 0).x;
+    el('path', {
+      d: `M${O(-0.35,0.28).x},${O(-0.35,0.28).y} L${O(0.05,0.28).x},${O(0.05,0.28).y} A${arcR2},${arcR2} 0 0 1 ${O(0.05,-0.28).x},${O(0.05,-0.28).y} L${O(-0.35,-0.28).x},${O(-0.35,-0.28).y}`,
+      fill:'none', stroke:STROKE, 'stroke-width':SW
+    });
+    el('path', {
+      d: `M${O(-0.35,0.28).x},${O(-0.35,0.28).y} Q${backPeakX},${O(0,0).y} ${O(-0.35,-0.28).x},${O(-0.35,-0.28).y}`,
+      fill:'none', stroke:STROKE, 'stroke-width':SW
+    });
+    // Internal stubs: from bus (fixed at -0.47) to shifted body left edge
+    el('line',{x1:t(-0.47,0.15).x,y1:O(-0.47,0.15).y,x2:O(-0.28,0.15).x,y2:O(-0.35,0.15).y,stroke:STROKE,'stroke-width':SW});
+    el('line',{x1:t(-0.47,-0.15).x,y1:O(-0.47,-0.15).y,x2:O(-0.28,-0.15).x,y2:O(-0.35,-0.15).y,stroke:STROKE,'stroke-width':SW});
+    el('line',{x1:O(0.33,0).x,y1:O(0.33,0).y,x2:t(1-0.5,0).x,y2:O(0,0).y,stroke:STROKE,'stroke-width':SW});
+    // Vertical bus and port stubs
+    const busX2 = t(-0.47,0).x;
+    el('line',{x1:t(-0.9,1).x,y1:cy1,x2:t(-0.455,1).x,y2:cy1,stroke:STROKE,'stroke-width':SW});
+    el('line',{x1:t(-0.9,-1).x,y1:cy2,x2:t(-0.455,-1).x,y2:cy2,stroke:STROKE,'stroke-width':SW});
+    el('line',{x1:busX2,y1:cy1,x2:busX2,y2:cy2,stroke:STROKE,'stroke-width':SW});
+  }
+
+  if (type === 'split') {
+    led(`lr-${bid}-A`,  `lg-${bid}-A`,  0, 0, 'l');
+    led(`lr-${bid}-Q1`, `lg-${bid}-Q1`, 0, 1, 'r');
+    led(`lr-${bid}-Q2`, `lg-${bid}-Q2`, 0,-1, 'r');
+    const cyi=t(0,0).y, cy1=t(0,1).y, cy2=t(0,-1).y;
+    arrow(t(-1+0.1,0).x, cyi, t(-1+0.5,0).x, cyi);
+    arrow(t(1-0.5,0).x, cy1, t(1-0.1,0).x, cy1);
+    arrow(t(1-0.5,0).x, cy2, t(1-0.1,0).x, cy2);
+    portCenters['A']  = usbPort(`up-${bid}-A`,  0, 0, 'l');
+    portCenters['Q1'] = usbPort(`up-${bid}-Q1`, 0, 1, 'r');
+    portCenters['Q2'] = usbPort(`up-${bid}-Q2`, 0,-1, 'r');
+    // SPLIT symbol from TikZ:
+    // (#1-0.9,cy)→(#1,cy) : horizontal input line
+    // (#1,cy+1)→(#1+0.9,cy+1) : top output
+    // (#1,cy-1)→(#1+0.9,cy-1) : bottom output
+    // (#1,cy+1)→(#1,cy-1) : vertical bar
+    el('line',{x1:t(-0.9,0).x,y1:cyi,x2:t(0,0).x,y2:cyi,stroke:STROKE,'stroke-width':SW});
+    el('line',{x1:t(0,1).x,y1:cy1,x2:t(0.9,1).x,y2:cy1,stroke:STROKE,'stroke-width':SW});
+    el('line',{x1:t(0,-1).x,y1:cy2,x2:t(0.9,-1).x,y2:cy2,stroke:STROKE,'stroke-width':SW});
+    el('line',{x1:t(0,1).x,y1:cy1,x2:t(0,-1).x,y2:cy2,stroke:STROKE,'stroke-width':SW});
+  }
+
+  return { svgEl: svg, portCenters, switchRect };
+}
+
+// ─── Block definitions ────────────────────────────────────────────────────
+const DEFS = {
+  power:  { ins:[],        outs:['Q'],       hasSwitch:true  },
+  input:  { ins:[],        outs:['Q'],       hasSwitch:true  },
+  not:    { ins:['A'],     outs:['Q'],       hasSwitch:false },
+  and:    { ins:['A','B'], outs:['Q'],       hasSwitch:false },
+  or:     { ins:['A','B'], outs:['Q'],       hasSwitch:false },
+  split:  { ins:['A'],     outs:['Q1','Q2'], hasSwitch:false },
+  output: { ins:['A'],     outs:[],          hasSwitch:false },
+};
+
+// ─── App state ────────────────────────────────────────────────────────────
+let blocks={}, wires=[], nid=1;
+let wm=false, ws=null, dp=null;
+let selB=null, selW=null, ctxM=null;
+const SL=document.getElementById('sl');
+const BL=document.getElementById('bl');
+const MI=document.getElementById('mi');
+
+// ─── Propagation ──────────────────────────────────────────────────────────
+function inSig(bid,pn){const w=wires.find(w=>w.tb===bid&&w.tp===pn);return w?(blocks[w.fb]?.out??null):null;}
+function calc(b){
+  if(b.type==='power'||b.type==='input')return b.sv;
+  const A=inSig(b.id,'A'),B=inSig(b.id,'B');
+  if(b.type==='not')   return A===null?null:(A?0:1);
+  if(b.type==='and')   return(A===null||B===null)?null:(A&&B?1:0);
+  if(b.type==='or')    return(A===null||B===null)?null:(A||B?1:0);
+  if(b.type==='split') return A;
+  if(b.type==='output')return A;
+  return null;
+}
+function prop(){
+  for(let i=0;i<12;i++) Object.values(blocks).forEach(b=>{b.out=calc(b);});
+  wires.forEach(w=>{w.sig=blocks[w.fb]?.out??null; renderWire(w);});
+  Object.values(blocks).forEach(b=>updBlk(b));
+}
+
+// ─── Update LEDs & switch ─────────────────────────────────────────────────
+function updPort(bid,pn,sig){
+  const r=document.getElementById(`lr-${bid}-${pn}`);
+  const g=document.getElementById(`lg-${bid}-${pn}`);
+  if(r){r.setAttribute('fill',sig===0?LED_RED_ON:LED_OFF); r.setAttribute('stroke',sig===0?'#c62828':'#aaa');}
+  if(g){g.setAttribute('fill',sig===1?LED_GRN_ON:LED_OFF); g.setAttribute('stroke',sig===1?'#2e7d32':'#aaa');}
+}
+function updBlk(b){
+  const def=DEFS[b.type];
+  def.outs.forEach(p=>updPort(b.id,p,b.out));
+  def.ins.forEach(p=>updPort(b.id,p,inSig(b.id,p)));
+  if(def.hasSwitch){
+    const th=document.getElementById(`sw-thumb-${b.id}`);
+    const bg=document.getElementById(`sw-bg-${b.id}`);
+    if(th && bg){
+      const bgy=parseFloat(bg.getAttribute('y'));
+      const bgh=parseFloat(bg.getAttribute('height'));
+      const thumbH = bgh*0.45;
+      const newY = b.sv===0 ? bgy+bgh-thumbH-Math.round(0.04*S) : bgy+Math.round(0.04*S);
+      th.setAttribute('y', newY);
+    }
+  }
+}
+
+// ─── Create block ─────────────────────────────────────────────────────────
+function mkBlk(type, x, y){
+  const id='b'+(nid++), def=DEFS[type];
+  const {svgEl, portCenters, switchRect} = mkSVG(type, id);  // pass id directly
+
+  const wrapper = document.createElement('div');
+  wrapper.className='blk'; wrapper.id=id;
+  wrapper.style.left=x+'px'; wrapper.style.top=y+'px';
+  wrapper.appendChild(svgEl);
+  BL.appendChild(wrapper);
+
+  blocks[id]={id, type, el:wrapper, svgEl, portCenters, switchRect, x, y, sv:0, out:null};
+
+  // Overlay invisible hit areas for ports
+  const PAD=Math.round(0.9*S);
+  Object.entries(portCenters).forEach(([pn,pc])=>{
+    const dir = def.ins.includes(pn)?'in':'out';
+    const div=document.createElement('div');
+    div.className='upc';
+    div.id=`hit-${id}-${pn}`;
+    div.dataset.b=id; div.dataset.p=pn; div.dataset.d=dir;
+    const pw=Math.round(0.15*S), ph=Math.round(0.42*S);
+    div.style.left=(pc.x-pw/2)+'px';
+    div.style.top=(pc.y-ph/2)+'px';
+    div.style.width=pw+'px'; div.style.height=ph+'px';
+    div.addEventListener('mousedown',e=>{e.stopPropagation();e.preventDefault();if(!wm)toggleWM();handlePort(div);});
+    wrapper.appendChild(div);
+  });
+
+  // Switch hit area
+  if(switchRect){
+    const sw=document.createElement('div');
+    sw.className='swh'; sw.id=`swh-${id}`;
+    sw.style.left=switchRect.x+'px'; sw.style.top=switchRect.y+'px';
+    sw.style.width=switchRect.w+'px'; sw.style.height=switchRect.h+'px';
+    sw.addEventListener('click',e=>{e.stopPropagation(); blocks[id].sv=blocks[id].sv===1?0:1; prop();});
+    wrapper.appendChild(sw);
+  }
+
+  setupEvt(id);
+  prop();
+  return id;
+}
+
+// ─── Block events ─────────────────────────────────────────────────────────
+function setupEvt(id){
+  const b=blocks[id],el=b.el;
+  let drag=false,ox,oy;
+  el.addEventListener('mousedown',e=>{
+    if(wm)return;
+    if(e.target.classList.contains('upc')||e.target.classList.contains('swh'))return;
+    e.preventDefault(); drag=true; ox=e.clientX-b.x; oy=e.clientY-b.y;
+    selBlock(id); el.style.zIndex=10;
+  });
+  document.addEventListener('mousemove',e=>{if(!drag)return; b.x=e.clientX-ox; b.y=e.clientY-oy; el.style.left=b.x+'px'; el.style.top=b.y+'px'; redrawW();});
+  document.addEventListener('mouseup',()=>{if(drag){drag=false;el.style.zIndex='';}});
+  el.addEventListener('contextmenu',e=>{e.preventDefault();showBCtx(e.clientX,e.clientY,id);});
+}
+
+// ─── Wiring ───────────────────────────────────────────────────────────────
+function handlePort(div){
+  const bid=div.dataset.b,pn=div.dataset.p,dir=div.dataset.d;
+  if(!ws){
+    if(dir!=='out'){flash(div);return;}
+    if(wires.find(w=>w.fb===bid&&w.fp===pn)){flash(div);return;}
+    ws={bid,pn,el:div}; div.style.outline='2px solid #1a56db'; startDP(div);
+  } else {
+    if(dir!=='in'){cancelW();return;}
+    if(ws.bid===bid){cancelW();return;}
+    if(wires.find(w=>w.tb===bid&&w.tp===pn)){flash(div);cancelW();return;}
+    addWire(ws.bid,ws.pn,bid,pn); cancelW(); if(wm)toggleWM();
+  }
+}
+function ppos(div){
+  const r=div.getBoundingClientRect(),w=document.getElementById('cw').getBoundingClientRect();
+  return{x:r.left+r.width/2-w.left,y:r.top+r.height/2-w.top};
+}
+function startDP(fromDiv){
+  dp=document.createElementNS('http://www.w3.org/2000/svg','path');
+  dp.setAttribute('stroke','#1a56db');dp.setAttribute('stroke-width','2.5');
+  dp.setAttribute('fill','none');dp.setAttribute('stroke-dasharray','7 4');
+  dp.setAttribute('marker-end','url(#ad)');SL.appendChild(dp);
+  function mv(e){if(!dp)return;const p=ppos(fromDiv),wr=document.getElementById('cw').getBoundingClientRect();dp.setAttribute('d',bz(p.x,p.y,e.clientX-wr.left,e.clientY-wr.top));}
+  document.addEventListener('mousemove',mv);dp._cl=()=>document.removeEventListener('mousemove',mv);
+}
+function cancelW(){if(ws){ws.el.style.outline='';ws=null;}if(dp){if(dp._cl)dp._cl();dp.remove();dp=null;}}
+function addWire(fb,fp,tb,tp){const w={id:'w'+(nid++),fb,fp,tb,tp,sig:null};wires.push(w);renderWire(w);prop();}
+function renderWire(wire){
+  let p=SL.querySelector('#'+wire.id);
+  if(!p){
+    p=document.createElementNS('http://www.w3.org/2000/svg','path');
+    p.id=wire.id;p.setAttribute('fill','none');p.setAttribute('stroke-width','3');
+    p.setAttribute('stroke-linecap','round');p.classList.add('wp');
+    p.style.pointerEvents='stroke';p.style.cursor='pointer';
+    p.addEventListener('mousedown',e=>{e.stopPropagation();selWire(wire.id);});
+    p.addEventListener('contextmenu',e=>{e.preventDefault();showWCtx(e.clientX,e.clientY,wire.id);});
+    SL.appendChild(p);
+  }
+  const fe=document.getElementById('hit-'+wire.fb+'-'+wire.fp);
+  const te=document.getElementById('hit-'+wire.tb+'-'+wire.tp);
+  if(!fe||!te)return;
+  const a=ppos(fe),b2=ppos(te);
+  p.setAttribute('d',bz(a.x,a.y,b2.x,b2.y));
+  const s=wire.sig;
+  if(s===1){p.setAttribute('stroke','#43a047');p.removeAttribute('marker-end');p.style.filter='drop-shadow(0 0 3px #43a04766)';}
+  else if(s===0){p.setAttribute('stroke','#e53935');p.removeAttribute('marker-end');p.style.filter='drop-shadow(0 0 2px #e5393544)';}
+  else{p.setAttribute('stroke','#aaa');p.removeAttribute('marker-end');p.style.filter='';}
+  p.classList.toggle('wsel',wire.id===selW);
+}
+function redrawW(){wires.forEach(w=>renderWire(w));}
+function bz(x1,y1,x2,y2){const dx=Math.max(Math.abs(x2-x1)*.5,40);return `M${x1},${y1} C${x1+dx},${y1} ${x2-dx},${y2} ${x2},${y2}`;}
+
+// ─── Selection / delete ───────────────────────────────────────────────────
+function selBlock(id){if(selB)blocks[selB]?.el.classList.remove('sel');selB=id;if(id){blocks[id]?.el.classList.add('sel');selWire(null);}}
+function selWire(id){if(selW){const p=SL.querySelector('#'+selW);if(p)p.classList.remove('wsel');}selW=id;if(id){const p=SL.querySelector('#'+id);if(p)p.classList.add('wsel');selBlock(null);}}
+function delSel(){if(selB)delBlock(selB);else if(selW)delWire(selW);}
+function delBlock(id){const b=blocks[id];if(!b||b.type==='power')return;b.el.remove();wires=wires.filter(w=>{if(w.fb===id||w.tb===id){SL.querySelector('#'+w.id)?.remove();return false;}return true;});delete blocks[id];if(selB===id)selB=null;prop();}
+function delWire(id){wires=wires.filter(w=>{if(w.id===id){SL.querySelector('#'+id)?.remove();return false;}return true;});if(selW===id)selW=null;prop();}
+
+// ─── Wire mode ────────────────────────────────────────────────────────────
+function toggleWM(){wm=!wm;document.getElementById('wbtn').classList.toggle('on',wm);document.body.style.cursor=wm?'crosshair':'';MI.classList.toggle('vis',wm);if(!wm)cancelW();}
+
+// ─── Keyboard / canvas ────────────────────────────────────────────────────
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){cancelW();if(wm)toggleWM();selBlock(null);selWire(null);}
+  if((e.key==='Delete'||e.key==='Backspace')&&document.activeElement===document.body)delSel();
+});
+document.getElementById('cw').addEventListener('mousedown',e=>{
+  const t=e.target;
+  if(t===document.getElementById('cw')||t===SL||t===BL){selBlock(null);selWire(null);if(wm&&ws)cancelW();}
+});
+
+// ─── Spawn / ctx / flash ──────────────────────────────────────────────────
+function spawn(type){const w=document.getElementById('cw').getBoundingClientRect();mkBlk(type,w.width/2-70+(Math.random()-.5)*140,w.height/2-60+(Math.random()-.5)*120);}
+function showBCtx(x,y,id){closeCtx();const m=document.createElement('div');m.className='cm';m.style.left=x+'px';m.style.top=y+'px';const i=document.createElement('div');i.className='cmi';i.textContent='✕  Supprimer bloc';i.onclick=()=>{delBlock(id);closeCtx();};m.appendChild(i);document.body.appendChild(m);ctxM=m;setTimeout(()=>document.addEventListener('mousedown',closeCtx,{once:true}),50);}
+function showWCtx(x,y,id){closeCtx();const m=document.createElement('div');m.className='cm';m.style.left=x+'px';m.style.top=y+'px';const i=document.createElement('div');i.className='cmi';i.textContent='✕  Supprimer câble';i.onclick=()=>{delWire(id);closeCtx();};m.appendChild(i);document.body.appendChild(m);ctxM=m;setTimeout(()=>document.addEventListener('mousedown',closeCtx,{once:true}),50);}
+function closeCtx(){if(ctxM){ctxM.remove();ctxM=null;}}
+function flash(el){el.style.outline='2px solid #e53935';setTimeout(()=>{el.style.outline='';},500);}
+
+// ─── Init ─────────────────────────────────────────────────────────────────
+window.addEventListener('load',()=>{
+  const w=document.getElementById('cw').getBoundingClientRect();
+  const pid=mkBlk('power',36,w.height/2-60);
+  blocks[pid].sv=1; prop();
+});
+</script>
+</body>
+</html>
